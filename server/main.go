@@ -1,14 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/go-redis/redis/v9"
 )
 
 func GetEntriesByKey(
-	w http.ResponseWriter,
-	r *http.Request) {
-	fmt.Printf("GET coming\n")
+	ctx context.Context,
+	rdb *redis.Client,
+	key string) {
+
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		fmt.Printf("GET err\n")
+	} else {
+		fmt.Printf("GET: %s\n", val)
+	}
 }
 
 func PutEntriesByKey(
@@ -20,9 +30,19 @@ func PutEntriesByKey(
 func HandleEntries(
 	w http.ResponseWriter,
 	r *http.Request) {
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "127.0.0.1:6379",
+		Password: "",
+	})
+
 	switch r.Method {
 	case http.MethodGet:
-		GetEntriesByKey(w, r)
+		GetEntriesByKey(
+			r.Context(),
+			rdb,
+			"abc",
+		)
 		break
 	case http.MethodPut:
 		PutEntriesByKey(w, r)
