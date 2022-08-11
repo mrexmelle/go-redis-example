@@ -1,31 +1,86 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"encoding/json"
 	"net/http"
+
+	"github.com/go-redis/redis/v9"
+	"github.com/gorilla/mux"
 )
 
-func GetEntriesByKey(
-	w http.ResponseWriter,
-	r *http.Request) {
-	fmt.Printf("GET coming\n")
+type Entry struct {
+	Key   string `json:"key,omitempty"`
+	Value string `json:"value"`
 }
 
-func PutEntriesByKey(
-	w http.ResponseWriter,
-	r *http.Request) {
-	fmt.Printf("PUT coming\n")
+func GetEntriesByKey(
+	ctx context.Context,
+	rdb *redis.Client,
+	key string) Entry {
+
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		val = ""
+	}
+
+	return Entry{key, val}
+}
+
+func PutEntries(
+	ctx context.Context,
+	rdb *redis.Client,
+	entry *Entry) error {
+	return rdb.Set(ctx, entry.Key, entry.Value, 0).Err()
 }
 
 func HandleEntries(
 	w http.ResponseWriter,
 	r *http.Request) {
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "127.0.0.1:6379",
+		Password: "",
+	})
+
+	vars := mux.Vars(r)
+	key, _ := vars["key"]
+
 	switch r.Method {
 	case http.MethodGet:
-		GetEntriesByKey(w, r)
+		entry := GetEntriesByKey(
+			r.Context(),
+			rdb,
+			key)
+
+		response, _ := json.Marshal(entry)
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-type", "application/json")
+		w.Write(response)
+
 		break
 	case http.MethodPut:
-		PutEntriesByKey(w, r)
+		var entry Entry
+		err := json.NewDecoder(r.Body).Decode(&entry)
+		if err != nil {
+			http.Error(w, "Bad request body", http.StatusBadRequest)
+			return
+		}
+		entry.Key = key
+
+		err = PutEntries(
+			r.Context(),
+			rdb,
+			&entry)
+
+		if err == nil {
+			response, _ := json.Marshal(entry)
+			w.WriteHeader(http.StatusCreated)
+			w.Header().Set("Content-type", "application/json")
+			w.Write(response)
+		} else {
+			http.Error(w, "Redis not accessible", http.StatusServiceUnavailable)
+		}
 		break
 	default:
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -34,6 +89,7 @@ func HandleEntries(
 }
 
 func main() {
-	http.HandleFunc("/entries", HandleEntries)
-	http.ListenAndServe(":8080", nil)
+	router := mux.NewRouter()
+	router.HandleFunc("/entries/{key}", HandleEntries)
+	http.ListenAndServe(":8080", router)
 }
