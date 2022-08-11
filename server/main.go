@@ -10,33 +10,28 @@ import (
 )
 
 type Entry struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-type Value struct {
+	Key   string `json:"key,omitempty"`
 	Value string `json:"value"`
 }
 
 func GetEntriesByKey(
 	ctx context.Context,
 	rdb *redis.Client,
-	key string) Value {
+	key string) Entry {
 
 	val, err := rdb.Get(ctx, key).Result()
 	if err != nil {
 		val = ""
 	}
 
-	return Value{val}
+	return Entry{key, val}
 }
 
-func PutEntriesByKey(
+func PutEntries(
 	ctx context.Context,
 	rdb *redis.Client,
-	key string,
-	value string) error {
-	return rdb.Set(ctx, key, value, 0).Err()
+	entry *Entry) error {
+	return rdb.Set(ctx, entry.Key, entry.Value, 0).Err()
 }
 
 func HandleEntries(
@@ -53,27 +48,33 @@ func HandleEntries(
 
 	switch r.Method {
 	case http.MethodGet:
-		value := GetEntriesByKey(
+		entry := GetEntriesByKey(
 			r.Context(),
 			rdb,
-			key,
-		)
+			key)
 
-		response, _ := json.Marshal(value)
+		response, _ := json.Marshal(entry)
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-type", "application/json")
 		w.Write(response)
 
 		break
 	case http.MethodPut:
-		err := PutEntriesByKey(
+		var entry Entry
+		err := json.NewDecoder(r.Body).Decode(&entry)
+		if err != nil {
+			http.Error(w, "Bad request body", http.StatusBadRequest)
+			return
+		}
+		entry.Key = key
+
+		err = PutEntries(
 			r.Context(),
 			rdb,
-			key,
-			"matt and jess",
-		)
+			&entry)
+
 		if err == nil {
-			response, _ := json.Marshal(Entry{key, "matt and jess"})
+			response, _ := json.Marshal(entry)
 			w.WriteHeader(http.StatusCreated)
 			w.Header().Set("Content-type", "application/json")
 			w.Write(response)
