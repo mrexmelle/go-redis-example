@@ -3,14 +3,19 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/go-redis/redis/v9"
+	"github.com/gorilla/mux"
 )
 
+type Entry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type Value struct {
-	Value string
+	Value string `json:"value"`
 }
 
 func GetEntriesByKey(
@@ -27,9 +32,11 @@ func GetEntriesByKey(
 }
 
 func PutEntriesByKey(
-	w http.ResponseWriter,
-	r *http.Request) {
-	fmt.Printf("PUT coming\n")
+	ctx context.Context,
+	rdb *redis.Client,
+	key string,
+	value string) error {
+	return rdb.Set(ctx, key, value, 0).Err()
 }
 
 func HandleEntries(
@@ -41,12 +48,15 @@ func HandleEntries(
 		Password: "",
 	})
 
+	vars := mux.Vars(r)
+	key, _ := vars["key"]
+
 	switch r.Method {
 	case http.MethodGet:
 		value := GetEntriesByKey(
 			r.Context(),
 			rdb,
-			"abc",
+			key,
 		)
 
 		response, _ := json.Marshal(value)
@@ -56,7 +66,20 @@ func HandleEntries(
 
 		break
 	case http.MethodPut:
-		PutEntriesByKey(w, r)
+		err := PutEntriesByKey(
+			r.Context(),
+			rdb,
+			key,
+			"matt and jess",
+		)
+		if err == nil {
+			response, _ := json.Marshal(Entry{key, "matt and jess"})
+			w.WriteHeader(http.StatusCreated)
+			w.Header().Set("Content-type", "application/json")
+			w.Write(response)
+		} else {
+			http.Error(w, "Redis not accessible", http.StatusServiceUnavailable)
+		}
 		break
 	default:
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -65,6 +88,7 @@ func HandleEntries(
 }
 
 func main() {
-	http.HandleFunc("/entries", HandleEntries)
-	http.ListenAndServe(":8080", nil)
+	router := mux.NewRouter()
+	router.HandleFunc("/entries/{key}", HandleEntries)
+	http.ListenAndServe(":8080", router)
 }
