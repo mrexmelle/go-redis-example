@@ -34,6 +34,13 @@ func PutEntries(
 	return rdb.Set(ctx, entry.Key, entry.Value, 0).Err()
 }
 
+func DelEntries(
+	ctx context.Context,
+	rdb *redis.Client,
+	key string) {
+	rdb.Del(ctx, key)
+}
+
 func HandleEntries(
 	w http.ResponseWriter,
 	r *http.Request) {
@@ -81,6 +88,12 @@ func HandleEntries(
 		} else {
 			http.Error(w, "Redis not accessible", http.StatusServiceUnavailable)
 		}
+		break
+	case http.MethodDelete:
+		DelEntries(
+			r.Context(),
+			rdb,
+			key)
 		break
 	default:
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
