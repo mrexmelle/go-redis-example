@@ -2,23 +2,28 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/go-redis/redis/v9"
 )
 
+type Value struct {
+	Value string
+}
+
 func GetEntriesByKey(
 	ctx context.Context,
 	rdb *redis.Client,
-	key string) {
+	key string) Value {
 
 	val, err := rdb.Get(ctx, key).Result()
 	if err != nil {
-		fmt.Printf("GET err\n")
-	} else {
-		fmt.Printf("GET: %s\n", val)
+		val = ""
 	}
+
+	return Value{val}
 }
 
 func PutEntriesByKey(
@@ -38,11 +43,17 @@ func HandleEntries(
 
 	switch r.Method {
 	case http.MethodGet:
-		GetEntriesByKey(
+		value := GetEntriesByKey(
 			r.Context(),
 			rdb,
 			"abc",
 		)
+
+		response, _ := json.Marshal(value)
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-type", "application/json")
+		w.Write(response)
+
 		break
 	case http.MethodPut:
 		PutEntriesByKey(w, r)
